@@ -38,6 +38,7 @@ obj-$(CONFIG_VSOCKMON) += vsockmon.o
 #
 obj-$(CONFIG_ARCNET) += arcnet/
 obj-$(CONFIG_DEV_APPLETALK) += appletalk/
+obj-$(CONFIG_AVB) += avb/
 obj-$(CONFIG_CAIF) += caif/
 obj-$(CONFIG_CAN) += can/
 obj-y += dsa/
