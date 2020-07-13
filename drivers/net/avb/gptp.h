@@ -1,8 +1,17 @@
-#include <linux/types.h>
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * gPTP         An implementation of the gPTP protocol stack
+ *              IEEE 802.1 AS-2020 for the Beaglebona Black/AI
+ *
+ * Authors:     Niklas Wantrupp
+ */
+
 
 
 #ifndef PTP_TYPES_H
 #define PTP_TYPES_H
+
+#include <linux/types.h>
 
 #define BIT_MASK_4 0xF
 #define BIT_MASK_8 0xFF
@@ -58,10 +67,9 @@ struct clock_quality {
     u8 clock_class;
     u8 clock_accuracy;
     u16 offset_scaled_log_variance;
-}
+};
 
-struct gptp_domain
-{
+struct gptp_domain {
     u8 domain_number;
     const u16 sdo_id :12;
 } ptp_domain_init = {
@@ -87,53 +95,11 @@ struct gptp_msg {
     struct gptp_msg_type type;
 };
 
-u64 calc_mean_dly(struct gptp_dly* dly_time)
-{
-    return (u64) (((double) dly_time->t_prop_initiator + dly_time->t_prop_responder) / 2);
-}
-
-u64 calc_dly_asym_initiator(struct gptp_dly* dly_time, u64 mean_dly)
-{
-    return mean_dly - dly_time->t_prop_initiator;
-}
-
-u64 calc_dly_asym_responder(struct gptp_dly* dly_time, u64 mean_dly)
-{
-    return dly_time->t_prop_responder - mean_dly;
-}
-
-int octect_cmp(u8* a, u8* b, int len)
-{
-    int i = 0;
-
-    for (;i < len; i++) {
-        if (a[i] < b[i])
-            return -1;
-        else if (a[i] > b[i])
-            return 1;
-    }
-
-    return 0;
-}
-
-void calc_eui64(u8 *mac_buf, u8 *eui_buf)
-{
-    u8 octet = 0;
-    u64 eui64 = 0;
-    int i = 0;
-    mask = 0x02;
-    eui_buf[3] = 0xFF;
-    eui_buf[4] = 0xFE;
-
-    for (i = 0; i < 3; i++) {
-        eui_buf[i] = mac_buf[i];
-    }
-
-    for (i = 7; i > 4; i--) {
-        eui_buf[i] = mac_buf[i-2];
-    }
-
-    eui_buf[0] ^= mask;
-}
+// gptp helper functions
+static u64 calc_mean_dly(struct gptp_dly* dly_time);
+static u64 calc_dly_asym_initiator(struct gptp_dly* dly_time, u64 mean_dly);
+static u64 calc_dly_asym_responder(struct gptp_dly* dly_time, u64 mean_dly);
+static int octect_cmp(u8* a, u8* b, int len);
+static void calc_eui64(u8 *mac_buf, u8 *eui_buf);
 
 #endif // PTP_TYPES_H
