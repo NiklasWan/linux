@@ -3,4 +3,4 @@
 # Makefile for drivers/net/avb
 #
 
-obj-$(CONFIG_AVB) += gptp_runner.o
+obj-$(CONFIG_AVB) += gptp_common.o gptp.o
