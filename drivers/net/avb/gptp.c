@@ -13,9 +13,9 @@
 #include "gptp_common.h"
 
 #define TIMEOUT 100 //ms
-#define GPTP_TX_BUF_SIZE                  1024
-#define GPTP_RX_BUF_SIZE                  4096
-#define GPTP_CON_TS_BUF_SIZE              1024
+//#define GPTP_TX_BUF_SIZE                  1024
+//#define GPTP_RX_BUF_SIZE                  4096
+//#define GPTP_CON_TS_BUF_SIZE              1024
 
 MODULE_DESCRIPTION("Kernel Dummy Module");
 MODULE_AUTHOR("Niklas Wantrupp");
