@@ -1,6 +1,2 @@
-# SPDX-License-Identifier: GPL-2.0-only
-#
-# Makefile for drivers/net/avb
-#
-
-obj-$(CONFIG_AVB) += gptp_common.o gptp.o
+obj-$(CONFIG_AVB) += gptp_runner.o
+gptp_runner-$(CONFIG_AVB) = gptp_common.o gptp.o 

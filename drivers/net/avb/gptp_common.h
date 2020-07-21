@@ -6,6 +6,7 @@
 #include <linux/timex.h>
 #include <linux/time.h>
 #include <linux/if_ether.h>
+#include <asm/socket.h>
 
 /* Buffer sizes */
 #define GPTP_TX_BUF_SIZE                  1024
@@ -101,7 +102,8 @@
 #define GPTP_CLOCK_IDEN_LEN               8
 #define GPTP_ETHEDR_HDR_LEN               14
 #define GPTP_HEADER_LEN                   34
-#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
+#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN +\
+					  GPTP_HEADER_LEN)
 
 /* Default timeouts */
 #define GPTP_PDELAY_REQ_INTERVAL          8000
@@ -111,33 +113,33 @@
 #define GPTP_SYNC_INTERVAL                2000
 #define GPTP_SYNC_TIMEOUT                 32000
 
-struct gPTPHdr {
+struct gptp_hdr {
 	union tbf {
 		struct th {
 			union tb1 {
-				u8 tsSpec;
-				u8 msgType;
+				u8 ts_spec;
+				u8 msg_type;
 			} b1;
 			union tb2 {
 				u8 res1;
-				u8 ptpVer;
+				u8 ptp_ver;
 			} b2;
-			u16 msgLen;
-			u8 domNo;
+			u16 msg_len;
+			u8 dom_no;
 			u8 res2;
 			u16 flags;
-			u64 corrF;
+			u64 corr_f;
 			u32 res3;
-			u8 srcPortIden[GPTP_PORT_IDEN_LEN];
-			u16 seqNo;
+			u8 src_port_iden[GPTP_PORT_IDEN_LEN];
+			u16 seq_no;
 			u8 ctrl;
-			u8 logMsgInt;
+			u8 log_msg_int;
 		} f;
 		unsigned char byte[GPTP_HEADER_LEN];
 	} h;
 };
 
-struct gPTPTS {
+struct gptp_ts {
 	struct s48b {
 		u16 msb;
 		u32 lsb;
@@ -145,93 +147,96 @@ struct gPTPTS {
 	u32 ns;
 };
 
-struct gPTPPrioVec {
+struct gptp_prio_vec {
 	u8  res1[10];
-	u16 currUTCOff;
+	u16 curr_UTC_off;
 	u8  res2;
 	u8  prio1;
-	struct clockQual {
-		u8  clockClass;
-		u8  clockAccuracy;
-		u16 offsetScaledLogVariance;
-	}clockQual;
+	struct clock_qual {
+		u8  clock_class;
+		u8  clock_accuracy;
+		u16 offset_scaled_log_variance;
+	}clock_qual;
 	u8  prio2;
 	u8  iden[GPTP_PORT_IDEN_LEN];
-	u16 stepsRem;
-	u8  clockSrc;
+	u16 steps_rem;
+	u8  clock_src;
 };
 
-struct gPTPscaledNs {
+struct scaled_ns {
 	u8 ns[12];
 };
 
-struct gPTPtlv {
+struct gptp_tlv {
 	u16 type;
 	u16 len;
 };
 
-struct gPTPOrgExt {
-	u8 orgType[3];
-	u8 orgSubType[3];
-	u32 csRateOff;
-	u16 gmTBInd;
-	struct gPTPscaledNs lastGMPhChg;
-	u32 gmFreqChg;
+struct gptp_org_ext {
+	u8 org_type[3];
+	u8 org_sub_type[3];
+	u32 cs_rate_off;
+	u16 gm_tb_ind;
+	struct scaled_ns last_gm_phchg;
+	u32 gm_freq_chg;
 };
 
 struct timer {
-	u64 lastTS;
-	u32 timeInterval;
-	u32 timerEvt;
+	u64 last_ts;
+	u32 time_interval;
+	u32 timer_evt;
 };
 
 struct dmst {
 	int state;
-	u16 rxSeqNo;
-	u16 txSeqNo;
-	u32 delayReqInterval;
-	u32 delayReqTimeOut;
-	u8   reqPortIden[GPTP_PORT_IDEN_LEN];
+	u16 rx_seq_no;
+	u16 tx_seq_no;
+	u32 delayr_req_interval;
+	u32 delay_req_timeout;
+	u8 req_port_iden[GPTP_PORT_IDEN_LEN];
 };
 
 struct bmcst {
 	int state;
-	u16 annoSeqNo;
-	u32 announceInterval;
-	u32 announceTimeout;
-	struct gPTPPrioVec portPrio;
-	struct gPTPPrioVec gmPrio;
+	u16 anno_seq_no;
+	u32 announce_interval;
+	u32 announce_timeout;
+	struct gptp_prio_vec port_prio;
+	struct gptp_prio_vec gm_prio;
 };
 
 struct csst {
 	int state;
-	u16 syncSeqNo;
-	u32 syncInterval;
-	u32 syncTimeout;
+	u16 sync_seq_no;
+	u32 sync_interval;
+	u32 sync_timeout;
+};
+
+struct socketdata {
+	int type;
+ 	int ifidx;
+ 	char srcmac[6];
+ 	char destmac[6];
+ 	struct socket* sock;
+ 	struct iovec txiov;
+	struct iovec rxiov;
+ 	struct msghdr tx_msg_hdr;
+ 	struct sockaddr_ll tx_sock_address;
+ 	struct msghdr rx_msg_hdr;
+ 	struct sockaddr_ll rx_sock_address;
+ 	char tx_buf[GPTP_TX_BUF_SIZE];
+ 	char rx_buf[GPTP_RX_BUF_SIZE];
+ 	char ts_buf[GPTP_CON_TS_BUF_SIZE];
+ 	bool is_init;
 };
 
 struct gptp_instance {
-	int  sockfd;
-	int  hwClkId;
-	int  logLevel;
-	bool daemonMode;
-
-	u32   msrdDelay;
-
-	char txBuf[GPTP_TX_BUF_SIZE];
-	char rxBuf[GPTP_RX_BUF_SIZE];
-	char ifName[GPTP_IF_NAME_SIZE];
-	char tsBuf[GPTP_CON_TS_BUF_SIZE];
+	u32 msrd_delay;
+	struct socketdata *sd;
 
 	struct ifreq if_idx;
 	struct ifreq if_mac;
 	struct ifreq if_hw;
-
-	struct iovec rxiov;
-	struct msghdr txMsgHdr;
-	struct msghdr rxMsgHdr;
-	struct sockaddr_ll txSockAddress;
-	struct sockaddr_ll rxSockAddress;
 
 	struct timex tx;
 	struct timespec ts[12];
@@ -246,13 +251,17 @@ void gptp_init_tx_buf(struct gptp_instance* gptp);
 void gptp_init_rx_buf(struct gptp_instance* gptp);
 
 u64 gptp_get_curr_milli_sec_ts(void);
-void gptp_start_timer(struct gptp_instance* gptp, u32 timerId, u32 timeInterval, u32 timerEvt);
-void gptp_stop_timer(struct gptp_instance* gptp, u32 timerId);
-void gptp_reset_timer(struct gptp_instance* gptp, u32 timerId);
+void gptp_start_timer(struct gptp_instance* gptp, u32 timer_id,
+		      u32 time_interval, u32 timer_evt);
+void gptp_stop_timer(struct gptp_instance* gptp, u32 timer_id);
+void gptp_reset_timer(struct gptp_instance* gptp, u32 timer_id);
 
-int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop, struct timespec *result);
-void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct timespec *result);
-void gptp_timespec_sum(struct timespec *start, struct timespec *stop, struct timespec *result);
+int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop,
+			  struct timespec *result);
+void gptp_timespec_diff(struct timespec *start, struct timespec *stop,
+		       	struct timespec *result);
+void gptp_timespec_sum(struct timespec *start, struct timespec *stop,
+		       struct timespec *result);
 
 void gptp_copy_ts_from_buf(struct timespec *ts, u8 *src);
 void gptp_copy_ts_to_buf(struct timespec *ts, u8 *dest);
