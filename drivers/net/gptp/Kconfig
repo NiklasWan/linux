@@ -1,0 +1,5 @@
+config GPTP
+	tristate "gPTP protocol support"
+	---help---
+	  This implemenattion of the IEEE 802.1AS protocol allows
+	  for P2P time synchronization within a given network.

@@ -9,16 +9,20 @@
 #include <linux/netdevice.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
+#include <linux/phy.h>
+#include <linux/time64.h>
 
 #include "gptp_common.h"
+#include "../ethernet/ti/cpts.h"
+#include "../ethernet/ti/cpsw_priv.h"
 
-#define TIMEOUT 100 //ms
+#define TIMEOUT 1000 //ms
 //#define GPTP_TX_BUF_SIZE                  1024
 //#define GPTP_RX_BUF_SIZE                  4096
 //#define GPTP_CON_TS_BUF_SIZE              1024
 
-MODULE_DESCRIPTION("Kernel Dummy Module");
-MODULE_AUTHOR("Niklas Wantrupp");
+MODULE_DESCRIPTION("gPTP kernel module");
+MODULE_AUTHOR("Niklas Wantrupp <niklaswantrupp@web.de>");
 MODULE_LICENSE("GPL");
 
 void gptp_timer_callback(struct timer_list *data);
@@ -46,11 +50,15 @@ int gptp_sock_init(void)
 	struct net *net;
 	int ts_opts = 0;
 	struct timeval rx_timeout;
+	struct cpsw_common *cpsw;
+	struct timespec64 ts;
 	rx_timeout.tv_sec = 1;
 	rx_timeout.tv_usec = 0;
 
-	if ((gptp.sd = (struct socketdata *) kmalloc(sizeof(struct socketdata), GFP_ATOMIC)) == NULL) {
-		printk(KERN_DEBUG "Unable to allocate required kernel memory for socketdata\n");
+	if ((gptp.sd = (struct socketdata *) kmalloc(sizeof(struct socketdata),
+						     GFP_ATOMIC)) == NULL) {
+		printk(KERN_DEBUG "Unable to allocate required\
+		       kernel memory for socketdata\n");
 		return ENOMEM;
 	}
 
@@ -71,36 +79,42 @@ int gptp_sock_init(void)
 		 | SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_OPT_CMSG | \
 		 SOF_TIMESTAMPING_OPT_ID;
 	
-	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, SO_TIMESTAMPING_OLD, 
-				    (void *) &ts_opts, sizeof(ts_opts))) != 0) {
+	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
+				     SO_TIMESTAMPING_OLD, (void *) &ts_opts,
+				     sizeof(ts_opts))) != 0) {
 		printk(KERN_ERR "Error in setting timestamping options\n");
 		return err;
 	}
 	
-	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, SO_RCVTIMEO_OLD, 
-				    (void *) &rx_timeout, sizeof(rx_timeout))) != 0) {
+	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET,
+				     SO_RCVTIMEO_OLD, (void *) &rx_timeout,
+				     sizeof(rx_timeout))) != 0) {
 		printk(KERN_ERR "Error in setting socket rx timeout options\n");
 		return err;
 	}
 
 	ts_opts = 1;
 	
-	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, SO_SELECT_ERR_QUEUE,
-				    (void *) &ts_opts, sizeof(ts_opts))) != 0) {
-		printk(KERN_ERR "Error in setting err queue optins for socket\n");
+	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
+				     SO_SELECT_ERR_QUEUE,(void *) &ts_opts,
+				     sizeof(ts_opts))) != 0) {
+		printk(KERN_ERR "Error in setting err queue\
+		       optins for socket\n");
 		return err;
 	}
 
 	ts_opts = 1;
 
 	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, SO_REUSEADDR,
-				    (void *) &ts_opts, sizeof(ts_opts))) != 0) {
+				    (void *) &ts_opts, 
+				    sizeof(ts_opts))) != 0) {
 		printk(KERN_ERR "Error in setting reuse optins for socket\n");
 		return err;
 	}
 
-	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, SO_BINDTODEVICE,
-				    (void *) dev->name, IFNAMSIZ - 1)) != 0) {  
+	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
+				     SO_BINDTODEVICE, (void *) dev->name,
+				     IFNAMSIZ - 1)) != 0) {  
 		printk(KERN_ERR "Error in binding socket to device\n");  
 		return err;                                                     
 	}
@@ -155,6 +169,15 @@ int gptp_sock_init(void)
 	gptp.sd->rx_msg_hdr.msg_name = &gptp.sd->rx_sock_address;
 	gptp.sd->rx_msg_hdr.msg_namelen = sizeof(struct sockaddr_ll);	
 	
+	// Retrieve ptp hw clock
+	cpsw = ndev_to_cpsw(dev);
+	gptp.ptp_clock = &cpsw->cpts->info;
+
+	printk(KERN_DEBUG "PTP HW Clock name: %s", gptp.ptp_clock->name);
+	gptp.ptp_clock->gettimex64(gptp.ptp_clock, &ts, NULL);
+	printk(KERN_DEBUG "PTP HW time seconds: %lld, nanosecond %ld", 
+	       ts.tv_sec, ts.tv_nsec);
+
 	// iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ | ITER_KVEC, &gptp.sd->rxiov, 1, 
 	// 	     GPTP_RX_BUF_SIZE);
 

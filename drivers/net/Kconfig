@@ -377,9 +377,9 @@ config SUNGEM_PHY
 
 source "drivers/net/arcnet/Kconfig"
 
-source "drivers/atm/Kconfig"
+source "drivers/net/gptp/Kconfig"
 
-source "drivers/net/avb/Kconfig"
+source "drivers/atm/Kconfig"
 
 source "drivers/net/caif/Kconfig"
 

@@ -7,6 +7,7 @@
 #include <linux/time.h>
 #include <linux/if_ether.h>
 #include <asm/socket.h>
+#include <linux/ptp_clock_kernel.h>
 
 /* Buffer sizes */
 #define GPTP_TX_BUF_SIZE                  1024
@@ -231,6 +232,7 @@ struct socketdata {
 };
 
 struct gptp_instance {
+	struct ptp_clock_info *ptp_clock;
 	u32 msrd_delay;
 	struct socketdata *sd;
 
