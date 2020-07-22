@@ -6,6 +6,7 @@
 #include <linux/timex.h>
 #include <linux/time.h>
 #include <linux/if_ether.h>
+#include <linux/time64.h>
 #include <asm/socket.h>
 #include <linux/ptp_clock_kernel.h>
 
@@ -240,8 +241,8 @@ struct gptp_instance {
 	struct ifreq if_mac;
 	struct ifreq if_hw;
 
-	struct timex tx;
-	struct timespec ts[12];
+	struct __kernel_timex tx;
+	struct timespec64 ts[12];
 	struct timer timers[GPTP_NUM_TIMERS];
 	struct dmst dm;
 	struct bmcst bmc;
@@ -258,20 +259,20 @@ void gptp_start_timer(struct gptp_instance* gptp, u32 timer_id,
 void gptp_stop_timer(struct gptp_instance* gptp, u32 timer_id);
 void gptp_reset_timer(struct gptp_instance* gptp, u32 timer_id);
 
-int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop,
-			  struct timespec *result);
-void gptp_timespec_diff(struct timespec *start, struct timespec *stop,
-		       	struct timespec *result);
-void gptp_timespec_sum(struct timespec *start, struct timespec *stop,
-		       struct timespec *result);
+int gptp_timespec_absdiff(struct timespec64 *start, struct timespec64 *stop,
+			  struct timespec64 *result);
+void gptp_timespec_diff(struct timespec64 *start, struct timespec64 *stop,
+		       	struct timespec64 *result);
+void gptp_timespec_sum(struct timespec64 *start, struct timespec64 *stop,
+		       struct timespec64 *result);
 
-void gptp_copy_ts_from_buf(struct timespec *ts, u8 *src);
-void gptp_copy_ts_to_buf(struct timespec *ts, u8 *dest);
+void gptp_copy_ts_from_buf(struct timespec64 *ts, u8 *src);
+void gptp_copy_ts_to_buf(struct timespec64 *ts, u8 *dest);
 
 u16 gptp_chg_endianess_16(u16 val);
 u8 gptp_calc_log_interval(u32 time);
 
-void get_tx_ts(struct gptp_instance* gptp, struct timespec* ts);
-void get_rx_ts(struct gptp_instance* gptp, struct timespec* ts);
+void get_tx_ts(struct gptp_instance* gptp, struct timespec64* ts);
+void get_rx_ts(struct gptp_instance* gptp, struct timespec64* ts);
 
 #endif

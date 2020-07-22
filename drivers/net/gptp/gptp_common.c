@@ -1,5 +1,7 @@
 #include <linux/kernel.h>
 #include <linux/printk.h>
+#include <linux/ktime.h>
+#include <linux/timekeeping.h>
 
 #include "gptp_common.h"
 
@@ -56,39 +58,39 @@ void gptp_init_rx_buf(struct gptp_instance* gptp)
 	gptp->sd->rx_msg_hdr.msg_namelen = sizeof(struct sockaddr_ll);
 }
 
-// u64 gptp_get_curr_milli_sec_ts(void)
-// {
-// 	u64 curr_tick_ts = 0;
-// 	struct timespec ts = {0};
+u64 gptp_get_curr_milli_sec_ts(void)
+{
+ 	ktime_t ts = 0;
 
-// 	clock_gettime(CLOCK_MONOTONIC, &ts);
-// 	curr_tick_ts = ((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+	ts = ktime_get();
 
-// 	return curr_tick_ts;
-// }
+ 	return (u64) ktime_to_ms(ts);
+}
 
-// void gptp_start_timer(struct gptp_instance* gptp, u32 timer_id, u32 time_interval, u32 timer_evt)
-// {
-// 	gptp->timers[timerId].time_interval = time_interval;
-// 	gptp->timers[timerId].timer_evt = timer_evt;
-// 	gptp->timers[timerId].last_ts = gptp_get_curr_milli_sec_ts();
-// }
+void gptp_start_timer(struct gptp_instance* gptp, u32 timer_id, 
+		      u32 time_interval, u32 timer_evt)
+{
+ 	gptp->timers[timer_id].time_interval = time_interval;
+ 	gptp->timers[timer_id].timer_evt = timer_evt;
+ 	gptp->timers[timer_id].last_ts = gptp_get_curr_milli_sec_ts();
+}
 
-// void gptp_reset_timer(struct gptp_instance* gptp, u32 timer_id)
-// {
-// 	if(gptp->timers[timerId].time_interval != 0)
-// 		gptp->timers[timerId].last_ts = gptp_get_curr_milli_sec_ts();
-// }
+void gptp_reset_timer(struct gptp_instance* gptp, u32 timer_id)
+{
+ 	if(gptp->timers[timer_id].time_interval != 0)
+ 		gptp->timers[timer_id].last_ts = gptp_get_curr_milli_sec_ts();
+}
 
-// void gptp_stop_timer(struct gptp_instance* gptp, u32 timer_id)
-// {
-// 	gptp->timers[timerId].time_interval = 0;
-// 	gptp->timers[timerId].timer_evt = GPTP_TIMER_INVALID;
-// 	gptp->timers[timerId].last_ts = 0;
-// }
+void gptp_stop_timer(struct gptp_instance* gptp, u32 timer_id)
+{
+ 	gptp->timers[timer_id].time_interval = 0;
+ 	gptp->timers[timer_id].timer_evt = GPTP_TIMER_INVALID;
+ 	gptp->timers[timer_id].last_ts = 0;
+}
 
 
-int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop, struct timespec *result)
+int gptp_timespec_absdiff(struct timespec64 *start, struct timespec64 *stop,
+			  struct timespec64 *result)
 {
 	int diffsign = 1;
 
@@ -107,7 +109,8 @@ int gptp_timespec_absdiff(struct timespec *start, struct timespec *stop, struct 
     return diffsign;
 }
 
-void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct timespec *result)
+void gptp_timespec_diff(struct timespec64 *start, struct timespec64 *stop,
+		       	struct timespec64 *result)
 {
     if ((stop->tv_nsec - start->tv_nsec) < 0) {
         result->tv_sec = stop->tv_sec - start->tv_sec - 1;
@@ -120,7 +123,8 @@ void gptp_timespec_diff(struct timespec *start, struct timespec *stop, struct ti
     return;
 }
 
-void gptp_timespec_sum(struct timespec *start, struct timespec *stop, struct timespec *result)
+void gptp_timespec_sum(struct timespec64 *start, struct timespec64 *stop,
+		       struct timespec64 *result)
 {
     if ((stop->tv_nsec + start->tv_nsec) >= 1000000000) {
         result->tv_sec = stop->tv_sec + start->tv_sec + 1;
@@ -133,7 +137,7 @@ void gptp_timespec_sum(struct timespec *start, struct timespec *stop, struct tim
     return;
 }
 
-void gptp_copy_ts_from_buf(struct timespec *ts, u8 *src)
+void gptp_copy_ts_from_buf(struct timespec64 *ts, u8 *src)
 {
 	u8 *dest = (u8*)ts;
 	struct gptp_ts *src_ts = (struct gptp_ts *)src;
@@ -158,7 +162,7 @@ void gptp_copy_ts_from_buf(struct timespec *ts, u8 *src)
 	
 }
 
-void gptp_copy_ts_to_buf(struct timespec *ts, u8 *dest)
+void gptp_copy_ts_to_buf(struct timespec64 *ts, u8 *dest)
 {
 	u8 *src = (u8*)ts;
 	struct gptp_ts *dest_ts = (struct gptp_ts *)dest;
@@ -189,7 +193,7 @@ u16 gptp_chg_endianess_16(u16 val)
 	return (((val & 0x00ff) << 8) | ((val & 0xff00) >> 8));
 }
 
-u8 gptp_calclog_interval(u32 time)
+u8 gptp_calc_log_interval(u32 time)
 {
 	u8  log_int = 0;
 	u32 lin_int = time;

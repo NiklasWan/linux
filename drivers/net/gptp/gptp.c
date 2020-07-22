@@ -6,6 +6,7 @@
 #include <linux/timer.h>
 #include <linux/jiffies.h>
 #include <net/sock.h>
+#include <linux/net.h>
 #include <linux/netdevice.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
@@ -13,13 +14,11 @@
 #include <linux/time64.h>
 
 #include "gptp_common.h"
+#include "sync.h"
 #include "../ethernet/ti/cpts.h"
 #include "../ethernet/ti/cpsw_priv.h"
 
 #define TIMEOUT 1000 //ms
-//#define GPTP_TX_BUF_SIZE                  1024
-//#define GPTP_RX_BUF_SIZE                  4096
-//#define GPTP_CON_TS_BUF_SIZE              1024
 
 MODULE_DESCRIPTION("gPTP kernel module");
 MODULE_AUTHOR("Niklas Wantrupp <niklaswantrupp@web.de>");
@@ -29,16 +28,130 @@ void gptp_timer_callback(struct timer_list *data);
 void gptp_worker_fn(struct work_struct *work);
 int gptp_sock_init(void);
 
-static int count = 0;
 static struct timer_list gptp_callback_timer;
 static struct workqueue_struct *gptp_workqueue;
 static DECLARE_WORK(gptp_work, gptp_worker_fn);
 static struct gptp_instance gptp;
 
+static int gptp_parse_msg(void)
+{
+	int evt = GPTP_EVT_NONE;
+	struct ethhdr * eh = (struct ethhdr *)&gptp.sd->rx_buf[0];
+	struct gptp_hdr * gh = (struct gptp_hdr *)&gptp.sd->rx_buf[sizeof(struct ethhdr)];
+
+	if(eh->h_proto == htons(ETH_P_1588)) {
+		switch(gh->h.f.b1.msg_type & 0x0f)
+		{
+			case GPTP_MSG_TYPE_PDELAY_REQ:
+				gptp.dm.rx_seq_no = gptp_chg_endianess_16(gh->h.f.seq_no);
+				memcpy(&gptp.dm.req_port_iden[0], &gh->h.f.src_port_iden[0], GPTP_PORT_IDEN_LEN);
+				printk(KERN_INFO "gPTP PDelayReq (%d) Rcvd \n", gptp.dm.rx_seq_no);
+				evt = GPTP_EVT_DM_PDELAY_REQ;
+				break;
+			case GPTP_MSG_TYPE_PDELAY_RESP:
+				printk(KERN_INFO "gPTP PDelayResp (%d) Rcvd \n", gptp_chg_endianess_16(gh->h.f.seq_no));
+				evt = GPTP_EVT_DM_PDELAY_RESP;
+				break;
+			case GPTP_MSG_TYPE_PDELAY_RESP_FLWUP:
+				printk(KERN_INFO "gPTP PDelayRespFlwUp (%d) Rcvd \n", gptp_chg_endianess_16(gh->h.f.seq_no));
+				evt = GPTP_EVT_DM_PDELAY_RESP_FLWUP;
+				break;
+			case GPTP_MSG_TYPE_ANNOUNCE:
+				printk(KERN_INFO "gPTP Announce (%d) Rcvd \n", gptp_chg_endianess_16(gh->h.f.seq_no));
+				evt = GPTP_EVT_BMC_ANNOUNCE_MSG;
+				break;
+			case GPTP_MSG_TYPE_SYNC:
+				printk(KERN_INFO "gPTP Sync (%d) Rcvd \n", gptp_chg_endianess_16(gh->h.f.seq_no));
+				evt = GPTP_EVT_CS_SYNC_MSG;
+				break;
+			case GPTP_MSG_TYPE_SYNC_FLWUP:
+				printk(KERN_INFO "gPTP SyncFlwUp (%d) Rcvd \n", gptp_chg_endianess_16(gh->h.f.seq_no));
+				evt = GPTP_EVT_CS_SYNC_FLWUP_MSG;
+				break;
+			default:
+				break;
+		}
+	};
+
+	printk(KERN_DEBUG "gPTP parseMsg %d 0x%x 0x%x\n", eh->h_proto, gh->h.f.b1.msg_type, evt);
+
+	return evt;
+}
+
+static void gptp_handle_event(int evt)
+{
+	/* Handle the events when available */
+	if (evt != GPTP_EVT_NONE) {
+		switch(evt & GPTP_EVT_DEST_MASK) {
+			case GPTP_EVT_DEST_DM:
+				//dmHandleEvent(&gptp, evt);
+				break;
+			case GPTP_EVT_DEST_BMC:
+				//bmcHandleEvent(&gptp, evt);
+				break;
+			case GPTP_EVT_DEST_CS:
+				//csHandleEvent(&gptp, evt);
+				break;
+			default:
+				printk(KERN_ERR "gPTP unknown evt 0x%x\n", evt);
+				break;
+		}
+	}
+}
+
 void gptp_timer_callback(struct timer_list *data)
 {
-	count++;
-	printk(KERN_INFO "Timer callback fired. Count: %d\n", count);
+	int err = 0, i = 0;
+	int evt = GPTP_EVT_NONE;
+	u64 curr_tick_ts = gptp_get_curr_milli_sec_ts();
+	struct kvec vec;
+	mm_segment_t oldfs;
+
+	/* Initialize tx */
+	gptp_init_tx_buf(&gptp);
+
+	/* Start the state machines */
+	// dmHandleEvent(&gPTPd, GPTP_EVT_DM_ENABLE);
+	// bmcHandleEvent(&gPTPd, GPTP_EVT_BMC_ENABLE);
+	// csHandleEvent(&gPTPd, GPTP_EVT_CS_ENABLE);
+
+	/* Check for any timer event */
+	for(i = 0; i < GPTP_NUM_TIMERS; i++) {
+		if (gptp.timers[i].time_interval > 0) {
+			printk(KERN_DEBUG "gPTP timer %d timeInt %lu timeEvt\
+			       %d diffTS %ld\n", i, 
+			       gptp.timers[i].time_interval, 
+			       gptp.timers[i].timer_evt, 
+			       (curr_tick_ts - gptp.timers[i].last_ts));
+			/* When the requested time elapsed for this timer */
+			if((gptp.timers[i].last_ts + 
+			    gptp.timers[i].time_interval) < curr_tick_ts)			
+			{
+				/* Update and handle the timer event */
+				gptp.timers[i].last_ts = curr_tick_ts;
+				gptp_handle_event(gptp.timers[i].timer_evt);
+			}
+		}
+	}
+
+	/* Wait for GPTP events/messages */
+	gptp_init_rx_buf(&gptp);
+	gptp.sd->rxiov.iov_base = gptp.sd->rx_buf;
+	gptp.sd->rxiov.iov_len = GPTP_RX_BUF_SIZE;
+	vec.iov_base = gptp.sd->rxiov.iov_base;
+	vec.iov_len = gptp.sd->rxiov.iov_len;
+
+	iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ | ITER_KVEC, &gptp.sd->rxiov, 1, GPTP_RX_BUF_SIZE);
+
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	err = kernel_recvmsg(gptp.sd->sock, &gptp.sd->rx_msg_hdr, &vec, 1, gptp.sd->rxiov.iov_len, 0);
+	set_fs(oldfs);
+
+	if (err > 0) {
+		evt = gptp_parse_msg();
+		gptp_handle_event(evt);
+	}
 
 	mod_timer(&gptp_callback_timer, jiffies + msecs_to_jiffies(TIMEOUT));
 }
@@ -54,6 +167,15 @@ int gptp_sock_init(void)
 	struct timespec64 ts;
 	rx_timeout.tv_sec = 1;
 	rx_timeout.tv_usec = 0;
+
+	/* Initialize modules */
+	// initDM(&gPTPd);
+	// initBMC(&gPTPd);
+	init_cs(&gptp);
+
+	/* Init the state machines */
+	// dmHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
+	// bmcHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
 
 	if ((gptp.sd = (struct socketdata *) kmalloc(sizeof(struct socketdata),
 						     GFP_ATOMIC)) == NULL) {
