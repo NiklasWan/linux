@@ -193,7 +193,7 @@ struct dmst {
 	int state;
 	u16 rx_seq_no;
 	u16 tx_seq_no;
-	u32 delayr_req_interval;
+	u32 delay_req_interval;
 	u32 delay_req_timeout;
 	u8 req_port_iden[GPTP_PORT_IDEN_LEN];
 };
@@ -271,6 +271,7 @@ void gptp_copy_ts_to_buf(struct timespec64 *ts, u8 *dest);
 
 u16 gptp_chg_endianess_16(u16 val);
 u8 gptp_calc_log_interval(u32 time);
+int gptp_send_msg(struct gptp_instance *gptp, int tx_len);
 
 void get_tx_ts(struct gptp_instance* gptp, struct timespec64* ts);
 void get_rx_ts(struct gptp_instance* gptp, struct timespec64* ts);

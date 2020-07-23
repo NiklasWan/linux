@@ -2,6 +2,7 @@
 #include <linux/printk.h>
 #include <linux/ktime.h>
 #include <linux/timekeeping.h>
+#include <linux/socket.h>
 
 #include "gptp_common.h"
 
@@ -206,6 +207,20 @@ u8 gptp_calc_log_interval(u32 time)
 	return log_int;
 }
 
+int gptp_send_msg(struct gptp_instance *gptp, int tx_len)
+{
+	struct kvec vec;
+
+	gptp->sd->txiov.iov_base = gptp->sd->tx_buf;
+	gptp->sd->txiov.iov_len = tx_len;
+
+	vec.iov_base = gptp->sd->txiov.iov_base;
+	vec.iov_len = gptp->sd->txiov.iov_len;
+
+	iov_iter_init(&gptp->sd->tx_msg_hdr.msg_iter, WRITE | ITER_KVEC, &gptp->sd->txiov, 1, tx_len);
+
+	return kernel_sendmsg(gptp->sd->sock, &gptp->sd->tx_msg_hdr, &vec, 1, tx_len);
+}
 
 // void get_tx_ts(struct gptp_instance* gptp, struct timespec* ts)
 // {
@@ -262,36 +277,36 @@ u8 gptp_calc_log_interval(u32 time)
 // }
 
 
-// void get_rx_ts(struct gptp_instance* gptp, struct timespec* ts)
-// {
-// 	int level, type;
-// 	struct cmsghdr *cm;
-// 	struct timespec *sw, *rts = NULL;
+void get_rx_ts(struct gptp_instance* gptp, struct timespec64* ts)
+{
+	int level, type;
+	struct cmsghdr *cm;
+	struct timespec64 *sw, *rts = NULL;
+	int i = 0;
 
-// 	for (cm = CMSG_FIRSTHDR(&gptp->rx_msg_hdr); cm != NULL; cm = CMSG_NXTHDR(&gptp->rx_msg_hdr, cm)) {
-// 		level = cm->cmsg_level;
-// 		type  = cm->cmsg_type;
-// 		printk(KERN_DEBUG "Lvl:%d Type: %d Size: %d (%d)\n", level, type, cm->cmsg_len, sizeof(struct timespec));
-// 		if (SOL_SOCKET == level && SO_TIMESTAMPING == type) {
-// 			if (cm->cmsg_len < sizeof(*ts) * 3) {
-// 				printk(KERN_DEBUG "short SO_TIMESTAMPING message");
-// 			} else {
-// 				rts = (struct timespec *) CMSG_DATA(cm);
-// 				for(int i = 0; i < 3; i++)
-// 					if((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
-// 						if(ts != NULL) {
-// 							ts->tv_sec = rts[i].tv_sec;
-// 							ts->tv_nsec = rts[i].tv_nsec;
-// 						}
-// 						printk(KERN_INFO "RxTS: %d: sec: %d nsec: %d \n", i, rts[i].tv_sec, rts[i].tv_nsec);
-// 					}
-// 			}
-// 		}
-// 		if (SOL_SOCKET == level && SO_TIMESTAMPNS == type) {
-// 			if (cm->cmsg_len < sizeof(*sw)) {
-// 				printk(KERN_DEBUG "short SO_TIMESTAMPNS message");
-// 			}
-// 		}
-// 	}
-// }
-
+	for (cm = CMSG_FIRSTHDR(&gptp->sd->rx_msg_hdr); cm != NULL; cm = CMSG_NXTHDR(&gptp->sd->rx_msg_hdr, cm)) {
+		level = cm->cmsg_level;
+		type  = cm->cmsg_type;
+		printk(KERN_DEBUG "Lvl:%d Type: %d Size: %d (%d)\n", level, type, cm->cmsg_len, sizeof(struct timespec64));
+		if (SOL_SOCKET == level && SO_TIMESTAMPING_OLD == type) {
+			if (cm->cmsg_len < sizeof(*ts) * 3) {
+				printk(KERN_DEBUG "short SO_TIMESTAMPING_OLD message");
+			} else {
+				rts = (struct timespec64 *) CMSG_DATA(cm);
+				for (i = 0; i < 3; i++)
+					if ((rts[i].tv_sec != 0) || (rts[i].tv_nsec != 0)) {
+						if (ts != NULL) {
+							ts->tv_sec = rts[i].tv_sec;
+							ts->tv_nsec = rts[i].tv_nsec;
+						}
+						printk(KERN_INFO "RxTS: %d: sec: %lld nsec: %ld \n", i, rts[i].tv_sec, rts[i].tv_nsec);
+					}
+			}
+		}
+		if (SOL_SOCKET == level && SO_TIMESTAMPNS_OLD == type) {
+			if (cm->cmsg_len < sizeof(*sw)) {
+				printk(KERN_DEBUG "short SO_TIMESTAMPNS message");
+			}
+		}
+	}
+}

@@ -1,9 +1,9 @@
-
 #define CLOCK_SYNCHRONIZATION
 
-#include "sync.h"
 #include <linux/printk.h>
 #include <linux/time64.h>
+
+#include "sync.h"
 
 void init_cs(struct gptp_instance* gptp)
 {
@@ -75,7 +75,7 @@ void cs_handle_event(struct gptp_instance* gptp, int evt_id)
 					gptp_start_timer(gptp, GPTP_TIMER_SYNC_TO, gptp->cs.sync_timeout, GPTP_EVT_CS_SYNC_TO);
 					break;
 				case GPTP_EVT_CS_SYNC_MSG:
-					// get_rx_ts(gptp, &gptp->ts[7]);
+					get_rx_ts(gptp, &gptp->ts[7]);
 					break;
 				case GPTP_EVT_CS_SYNC_FLWUP_MSG:
 					gptp_copy_ts_from_buf(&gptp->ts[8], &gptp->sd->rx_buf[GPTP_BODY_OFFSET]);
@@ -203,7 +203,7 @@ static void send_sync(struct gptp_instance* gptp)
 
 	iov_iter_init(&gptp->sd->tx_msg_hdr.msg_iter, WRITE | ITER_KVEC, &gptp->sd->txiov, 1, GPTP_TX_BUF_SIZE);
 
-	if ((err = kernel_sendmsg(gptp->sd->sock, &gptp->sd->tx_msg_hdr, &vec, 1, GPTP_TX_BUF_SIZE)) <= 0) {
+	if ((err = gptp_send_msg(gptp, tx_len)) <= 0) {
 		printk(KERN_DEBUG "Sync Send failed %d\n", err);	
 		return;
 	}
@@ -218,7 +218,6 @@ static void send_sync_flwup(struct gptp_instance* gptp)
 	struct gptp_hdr *gh = (struct gptp_hdr *)&gptp->sd->tx_buf[sizeof(struct ethhdr)];
 	struct gptp_tlv *tlv;
 	struct gptp_org_ext *org_ext;
-	struct kvec vec;
 
 	/* Fill gPTP header */
 	gh->h.f.seq_no = gptp_chg_endianess_16(gptp->cs.sync_seq_no);
@@ -249,15 +248,7 @@ static void send_sync_flwup(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	gptp->sd->txiov.iov_base = gptp->sd->tx_buf;
-	gptp->sd->txiov.iov_len = GPTP_TX_BUF_SIZE;
-
-	vec.iov_base = gptp->sd->txiov.iov_base;
-	vec.iov_len = gptp->sd->txiov.iov_len;
-
-	iov_iter_init(&gptp->sd->tx_msg_hdr.msg_iter, WRITE | ITER_KVEC, &gptp->sd->txiov, 1, GPTP_TX_BUF_SIZE);
-	
-	if ((err = kernel_sendmsg(gptp->sd->sock, &gptp->sd->tx_msg_hdr, &vec, 1, GPTP_TX_BUF_SIZE)) <= 0) {
+	if ((err = gptp_send_msg(gptp, tx_len)) <= 0) {
 		printk(KERN_ERR "SyncFollowup Send failed %d\n", err);		
 		return;
 	}
