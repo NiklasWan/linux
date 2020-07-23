@@ -15,6 +15,7 @@
 #include "gptp_common.h"
 #include "sync.h"
 #include "delaymsr.h"
+#include "bmc.h"
 
 #include "../ethernet/ti/cpts.h"
 #include "../ethernet/ti/cpsw_priv.h"
@@ -88,7 +89,7 @@ static void gptp_handle_event(int evt)
 				dm_handle_event(&gptp, evt);
 				break;
 			case GPTP_EVT_DEST_BMC:
-				//bmcHandleEvent(&gptp, evt);
+				bmc_handle_event(&gptp, evt);
 				break;
 			case GPTP_EVT_DEST_CS:
 				cs_handle_event(&gptp, evt);
@@ -113,7 +114,7 @@ void gptp_timer_callback(struct timer_list *data)
 
 	/* Start the state machines */
 	dm_handle_event(&gptp, GPTP_EVT_DM_ENABLE);
-	// bmcHandleEvent(&gptp, GPTP_EVT_BMC_ENABLE);
+	bmc_handle_event(&gptp, GPTP_EVT_BMC_ENABLE);
 	cs_handle_event(&gptp, GPTP_EVT_CS_ENABLE);
 
 	/* Check for any timer event */
@@ -171,12 +172,12 @@ int gptp_sock_init(void)
 
 	/* Initialize modules */
 	init_dm(&gptp);
-	// initBMC(&gPTPd);
+	init_bmc(&gptp);
 	init_cs(&gptp);
 
 	/* Init the state machines */
 	dm_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
-	// bmcHandleEvent(&gPTPd, GPTP_EVT_STATE_ENTRY);
+	bmc_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
 
 	if ((gptp.sd = (struct socketdata *) kmalloc(sizeof(struct socketdata),
 						     GFP_ATOMIC)) == NULL) {
@@ -346,6 +347,7 @@ static void __exit gptp_exit(void)
 	printk(KERN_DEBUG "Uninitializing state machines\n");
 	deinit_cs(&gptp);
 	deinit_dm(&gptp);
+	deinit_bmc(&gptp);
 	printk(KERN_DEBUG "Freeing acquired socketdata memory\n");
 	kfree(gptp.sd);
 	printk(KERN_DEBUG "Stopping timer\n");
