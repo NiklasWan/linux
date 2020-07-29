@@ -46,12 +46,6 @@ menuconfig SND_DRIVERS
   
 if SND_DRIVERS
 
-config SND_AVB_VIRT
-	tristate "Virtual ALSA AVB driver"
-	default y
-	help
-	  This option enables the Virtual ALSA AVB driver for Beaglebone Black/AI.
-
 config SND_PCSP
 	tristate "PC-Speaker support (READ HELP!)"
 	depends on PCSPKR_PLATFORM && X86 && HIGH_RES_TIMERS
@@ -81,6 +75,12 @@ config SND_PCSP
 	  Say N if you have a sound card.
 	  Say M if you don't.
 	  Say Y only if you really know what you do.
+	  
+config SND_AVB
+	tristate "Generic AVB driver"
+	select SND_PCM
+        help
+          Say 'Y' or 'M' to include support for the PCM AVB device.
 
 config SND_DUMMY
 	tristate "Dummy (/dev/null) soundcard"
