@@ -11,6 +11,8 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <linux/phy.h>
+#include <linux/net_tstamp.h>
+#include <asm-generic/socket.h>
 
 #include "gptp_common.h"
 #include "sync.h"
@@ -104,24 +106,17 @@ static void gptp_handle_event(int evt)
 void gptp_timer_callback(struct timer_list *data)
 {
 	int err = 0, i = 0;
+	int timeout = 0;
 	int evt = GPTP_EVT_NONE;
 	u64 curr_tick_ts = gptp_get_curr_milli_sec_ts();
 	struct kvec vec;
 	mm_segment_t oldfs;
 
-	/* Initialize tx */
-	gptp_init_tx_buf(&gptp);
-
-	/* Start the state machines */
-	dm_handle_event(&gptp, GPTP_EVT_DM_ENABLE);
-	bmc_handle_event(&gptp, GPTP_EVT_BMC_ENABLE);
-	cs_handle_event(&gptp, GPTP_EVT_CS_ENABLE);
-
 	/* Check for any timer event */
 	for(i = 0; i < GPTP_NUM_TIMERS; i++) {
 		if (gptp.timers[i].time_interval > 0) {
-			printk(KERN_DEBUG "gPTP timer %d timeInt %lu timeEvt\
-			       %d diffTS %ld\n", i, 
+			printk(KERN_DEBUG "current ticks %llu, last ts: %llu\n", curr_tick_ts, gptp.timers[i].last_ts);
+			printk(KERN_DEBUG "gPTP timer %d timeInt %u timeEvt %d diffTS %llu\n", i, 
 			       gptp.timers[i].time_interval, 
 			       gptp.timers[i].timer_evt, 
 			       (curr_tick_ts - gptp.timers[i].last_ts));
@@ -143,19 +138,23 @@ void gptp_timer_callback(struct timer_list *data)
 	vec.iov_base = gptp.sd->rxiov.iov_base;
 	vec.iov_len = gptp.sd->rxiov.iov_len;
 
-	iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ | ITER_KVEC, &gptp.sd->rxiov, 1, GPTP_RX_BUF_SIZE);
+	iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ, &gptp.sd->rxiov, 1, 1);
 
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-	err = kernel_recvmsg(gptp.sd->sock, &gptp.sd->rx_msg_hdr, &vec, 1, gptp.sd->rxiov.iov_len, 0);
-	set_fs(oldfs);
+	// oldfs = get_fs();
+	// set_fs(KERNEL_DS);
+	err = kernel_recvmsg(gptp.sd->sock, &gptp.sd->rx_msg_hdr, &vec, 1, gptp.sd->rxiov.iov_len, MSG_DONTWAIT);
+	// set_fs(oldfs);
 
-	if (err > 0) {
+	printk(KERN_DEBUG "gPTP recvmsg %d\n", err);
+
+	if (err >= 1) {
 		evt = gptp_parse_msg();
 		gptp_handle_event(evt);
+	} else {
+		timeout = TIMEOUT;
 	}
 
-	mod_timer(&gptp_callback_timer, jiffies + msecs_to_jiffies(TIMEOUT));
+	mod_timer(&gptp_callback_timer, jiffies + msecs_to_jiffies(timeout));
 }
 
 int gptp_sock_init(void)
@@ -166,18 +165,7 @@ int gptp_sock_init(void)
 	int ts_opts = 0;
 	struct timeval rx_timeout;
 	struct cpsw_common *cpsw;
-	struct timespec64 ts;
-	rx_timeout.tv_sec = 1;
-	rx_timeout.tv_usec = 0;
-
-	/* Initialize modules */
-	init_dm(&gptp);
-	init_bmc(&gptp);
-	init_cs(&gptp);
-
-	/* Init the state machines */
-	dm_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
-	bmc_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
+	struct hwtstamp_config hwcfg;
 
 	if ((gptp.sd = (struct socketdata *) kmalloc(sizeof(struct socketdata),
 						     GFP_ATOMIC)) == NULL) {
@@ -186,30 +174,63 @@ int gptp_sock_init(void)
 		return ENOMEM;
 	}
 
-	if ((err = sock_create(AF_PACKET, SOCK_RAW, htons(ETH_P_1588),
-			      &gptp.sd->sock)) != 0) {
+	gptp.sd->type = ETH_P_1588;
+	gptp.sd->destmac[0] = 0x01;
+	gptp.sd->destmac[1] = 0x80;
+	gptp.sd->destmac[2] = 0xC2;
+	gptp.sd->destmac[3] = 0x00;
+	gptp.sd->destmac[4] = 0x00;
+	gptp.sd->destmac[5] = 0x0E;
+
+	if ((err = sock_create(AF_PACKET, SOCK_RAW, htons(gptp.sd->type), 
+		&gptp.sd->sock)) != 0) {
+
+	// if ((err = sock_create_kern(&init_net, AF_PACKET, SOCK_RAW, htons(gptp.sd->type), 
+	// 	&gptp.sd->sock)) != 0) {
 		printk(KERN_DEBUG "Unable to create raw socket\n");
 		return err;
 	}
 
 	net = sock_net(gptp.sd->sock->sk);
 	dev = dev_get_by_name_rcu(net, "eth0");
+	    
+	/* Set HW timestamp */
+	memset(&gptp.if_hw, 0, sizeof(struct ifreq));
+	memset(&hwcfg, 0, sizeof(struct hwtstamp_config));
+	strncpy(gptp.if_hw.ifr_name, dev->name, IFNAMSIZ-1);
+	hwcfg.tx_type = HWTSTAMP_TX_ON;
+	hwcfg.rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
+	gptp.if_hw.ifr_data = (void*)&hwcfg;
 
+	if (dev->netdev_ops->ndo_do_ioctl(dev, &gptp.if_hw, SIOCSHWTSTAMP)) {
+		printk(KERN_ERR "SIOCSHWTSTAMP err:%d\n", err);
+		return err;
+	}
+	    
+	else {
+		printk(KERN_DEBUG "HW tx:%d rxFilter: %d \n", hwcfg.tx_type, hwcfg.rx_filter);
+	}
+	    
 	memcpy(&gptp.sd->srcmac[0], dev->dev_addr, 6);
 	gptp.sd->ifidx = dev->ifindex;
+	printk(KERN_DEBUG "HW Adresss: %02x:%02x:%02x:%02x:%02x:%02x, Device index %d, Device name %s\n", gptp.sd->srcmac[0], 
+	gptp.sd->srcmac[1], gptp.sd->srcmac[2], gptp.sd->srcmac[3], gptp.sd->srcmac[4], 
+	gptp.sd->srcmac[5], gptp.sd->ifidx, dev->name);
+	
 
 	/* Set timestamp options */
-	ts_opts = SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE 
-		 | SOF_TIMESTAMPING_SOFTWARE | SOF_TIMESTAMPING_OPT_CMSG | \
-		 SOF_TIMESTAMPING_OPT_ID;
+	ts_opts = SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RAW_HARDWARE | SOF_TIMESTAMPING_OPT_CMSG | SOF_TIMESTAMPING_OPT_ID;
 	
 	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
-				     SO_TIMESTAMPING_OLD, (void *) &ts_opts,
+				     SO_TIMESTAMPING_NEW, (void *) &ts_opts,
 				     sizeof(ts_opts))) != 0) {
 		printk(KERN_ERR "Error in setting timestamping options\n");
 		return err;
 	}
 	
+	rx_timeout.tv_sec = 1;
+	rx_timeout.tv_usec = 0;
+
 	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET,
 				     SO_RCVTIMEO_OLD, (void *) &rx_timeout,
 				     sizeof(rx_timeout))) != 0) {
@@ -222,8 +243,7 @@ int gptp_sock_init(void)
 	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
 				     SO_SELECT_ERR_QUEUE,(void *) &ts_opts,
 				     sizeof(ts_opts))) != 0) {
-		printk(KERN_ERR "Error in setting err queue\
-		       optins for socket\n");
+		printk(KERN_ERR "Error in setting err queue optins for socket\n");
 		return err;
 	}
 
@@ -234,13 +254,6 @@ int gptp_sock_init(void)
 				    sizeof(ts_opts))) != 0) {
 		printk(KERN_ERR "Error in setting reuse optins for socket\n");
 		return err;
-	}
-
-	if ((err = kernel_setsockopt(gptp.sd->sock, SOL_SOCKET, 
-				     SO_BINDTODEVICE, (void *) dev->name,
-				     IFNAMSIZ - 1)) != 0) {  
-		printk(KERN_ERR "Error in binding socket to device\n");  
-		return err;                                                     
 	}
 
 	rtnl_lock();
@@ -268,7 +281,7 @@ int gptp_sock_init(void)
 	gptp.sd->tx_msg_hdr.msg_name = &gptp.sd->tx_sock_address;
 	gptp.sd->tx_msg_hdr.msg_namelen = sizeof(struct sockaddr_ll);
 	gptp.sd->tx_msg_hdr.msg_iocb = NULL;
-
+	
 	/* Index of the network device */
 	gptp.sd->rx_sock_address.sll_family = AF_PACKET;
 	gptp.sd->rx_sock_address.sll_protocol = htons(ETH_P_1588);
@@ -288,22 +301,21 @@ int gptp_sock_init(void)
 	gptp.sd->rxiov.iov_len  = GPTP_RX_BUF_SIZE;
 	gptp.sd->rx_msg_hdr.msg_iocb = NULL;
 	gptp.sd->rx_msg_hdr.msg_control = gptp.sd->ts_buf;
-	gptp.sd->rx_msg_hdr.msg_controllen = GPTP_CON_TS_BUF_SIZE;
+	gptp.sd->rx_msg_hdr.msg_controllen = sizeof(gptp.sd->ts_buf);
 	gptp.sd->rx_msg_hdr.msg_flags = 0;
 	gptp.sd->rx_msg_hdr.msg_name = &gptp.sd->rx_sock_address;
-	gptp.sd->rx_msg_hdr.msg_namelen = sizeof(struct sockaddr_ll);	
+	gptp.sd->rx_msg_hdr.msg_namelen = sizeof(struct sockaddr_ll);
+	iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ, &gptp.sd->rxiov, 1, GPTP_RX_BUF_SIZE);	
 	
+	if ((err = kernel_bind(gptp.sd->sock, (struct sockaddr *) &gptp.sd->rx_sock_address, 
+	sizeof(struct sockaddr_ll))) < 0) {
+		printk(KERN_ERR "Error in binding socket to device: err %d\n", err);  
+		return err;  
+	}
+
 	// Retrieve ptp hw clock
 	cpsw = ndev_to_cpsw(dev);
 	gptp.ptp_clock = &cpsw->cpts->info;
-
-	printk(KERN_DEBUG "PTP HW Clock name: %s", gptp.ptp_clock->name);
-	gptp.ptp_clock->gettimex64(gptp.ptp_clock, &ts, NULL);
-	printk(KERN_DEBUG "PTP HW time seconds: %lld, nanosecond %ld", 
-	       ts.tv_sec, ts.tv_nsec);
-
-	// iov_iter_init(&gptp.sd->rx_msg_hdr.msg_iter, READ | ITER_KVEC, &gptp.sd->rxiov, 1, 
-	// 	     GPTP_RX_BUF_SIZE);
 
 	gptp.sd->is_init = true;
 
@@ -314,11 +326,28 @@ void gptp_worker_fn(struct work_struct *work)
 {
 	printk(KERN_INFO "Hello from the workqueue\n");
 	printk(KERN_DEBUG "Init socket\n");
+
+	/* Initialize modules */
+	init_dm(&gptp);
+	init_bmc(&gptp);
+	init_cs(&gptp);
+
+	/* Init the state machines */
+	dm_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
+	bmc_handle_event(&gptp, GPTP_EVT_STATE_ENTRY);
 	
 	if (gptp_sock_init() != 0) {
 		printk(KERN_ERR "Unable to create socket\n");
 		return;
 	}
+
+	/* Initialize tx */
+	gptp_init_tx_buf(&gptp);
+
+	/* Start the state machines */
+	dm_handle_event(&gptp, GPTP_EVT_DM_ENABLE);
+	bmc_handle_event(&gptp, GPTP_EVT_BMC_ENABLE);
+	cs_handle_event(&gptp, GPTP_EVT_CS_ENABLE);
 
 	timer_setup(&gptp_callback_timer, gptp_timer_callback, 0);
 	mod_timer(&gptp_callback_timer, jiffies + msecs_to_jiffies(TIMEOUT));

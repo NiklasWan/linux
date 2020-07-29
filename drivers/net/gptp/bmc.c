@@ -133,7 +133,7 @@ static void send_announce(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	if ((err = gptp_send_msg(gptp, tx_len)) <= 0)
+	if ((err = gptp_send_msg(gptp->sd, tx_len)) <= 0)
 		printk(KERN_DEBUG "Announce Send failed %d\n", err);	
 	else
 		printk(KERN_INFO ">>> Announce (%d) sent\n", gptp->bmc.anno_seq_no++);

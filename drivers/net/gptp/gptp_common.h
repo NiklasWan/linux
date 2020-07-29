@@ -104,8 +104,7 @@
 #define GPTP_CLOCK_IDEN_LEN               8
 #define GPTP_ETHEDR_HDR_LEN               14
 #define GPTP_HEADER_LEN                   34
-#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN +\
-					  GPTP_HEADER_LEN)
+#define GPTP_BODY_OFFSET                  (GPTP_ETHEDR_HDR_LEN + GPTP_HEADER_LEN)
 
 /* Default timeouts */
 #define GPTP_PDELAY_REQ_INTERVAL          8000
@@ -271,7 +270,7 @@ void gptp_copy_ts_to_buf(struct timespec64 *ts, u8 *dest);
 
 u16 gptp_chg_endianess_16(u16 val);
 u8 gptp_calc_log_interval(u32 time);
-int gptp_send_msg(struct gptp_instance *gptp, int tx_len);
+int gptp_send_msg(struct socketdata *sd, int tx_len);
 
 void get_tx_ts(struct gptp_instance* gptp, struct timespec64* ts);
 void get_rx_ts(struct gptp_instance* gptp, struct timespec64* ts);

@@ -58,7 +58,8 @@ void cs_handle_event(struct gptp_instance* gptp, int evt_id)
 					break;
 				case GPTP_EVT_CS_SYNC_RPT:
 					send_sync(gptp);
-					// get_tx_ts(gptp, &gptp->ts[6]);
+					printk(KERN_DEBUG "Getting timestamp\n");
+					get_tx_ts(gptp, &gptp->ts[6]);
 					send_sync_flwup(gptp);
 					break;
 				case GPTP_EVT_STATE_EXIT:
@@ -175,7 +176,6 @@ static void send_sync(struct gptp_instance* gptp)
 	int err = 0;
 	int tx_len = sizeof(struct ethhdr);
 	struct gptp_hdr *gh = (struct gptp_hdr *)&gptp->sd->tx_buf[sizeof(struct ethhdr)];
-	struct kvec vec;
 
 	/* Fill gPTP header */
 	gh->h.f.seq_no = gptp_chg_endianess_16(gptp->cs.sync_seq_no);
@@ -195,15 +195,7 @@ static void send_sync(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	gptp->sd->txiov.iov_base = gptp->sd->tx_buf;
-	gptp->sd->txiov.iov_len = GPTP_TX_BUF_SIZE;
-
-	vec.iov_base = gptp->sd->txiov.iov_base;
-	vec.iov_len = gptp->sd->txiov.iov_len;
-
-	iov_iter_init(&gptp->sd->tx_msg_hdr.msg_iter, WRITE | ITER_KVEC, &gptp->sd->txiov, 1, GPTP_TX_BUF_SIZE);
-
-	if ((err = gptp_send_msg(gptp, tx_len)) <= 0) {
+	if ((err = gptp_send_msg(gptp->sd, tx_len)) <= 0) {
 		printk(KERN_DEBUG "Sync Send failed %d\n", err);	
 		return;
 	}
@@ -248,7 +240,7 @@ static void send_sync_flwup(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	if ((err = gptp_send_msg(gptp, tx_len)) <= 0) {
+	if ((err = gptp_send_msg(gptp->sd, tx_len)) <= 0) {
 		printk(KERN_ERR "SyncFollowup Send failed %d\n", err);		
 		return;
 	}

@@ -49,13 +49,13 @@ void dm_handle_event(struct gptp_instance* gptp, int evt_id)
 					gptp_stop_timer(gptp, GPTP_TIMER_DELAYREQ_RPT);
 					memset(&gptp->ts[0], 0, sizeof(struct timespec64) * 4);
 					send_delay_req(gptp);
-					// get_tx_ts(gptp, &gptp->ts[0]);
+					get_tx_ts(gptp, &gptp->ts[0]);
 					dm_handle_state_change(gptp, DM_STATE_DELAY_RESP_WAIT);
 					break;
 				case GPTP_EVT_DM_PDELAY_REQ:
 					get_rx_ts(gptp, &gptp->ts[4]);
 					send_delay_resp(gptp);
-					// get_tx_ts(gptp, &gptp->ts[5]);
+					get_tx_ts(gptp, &gptp->ts[5]);
 					send_delay_resp_flwup(gptp);
 					break;
 				case GPTP_EVT_STATE_EXIT:
@@ -73,13 +73,13 @@ void dm_handle_event(struct gptp_instance* gptp, int evt_id)
 				case GPTP_EVT_DM_PDELAY_REQ:
 					get_rx_ts(gptp, &gptp->ts[4]);
 					send_delay_resp(gptp);
-					// get_tx_ts(gptp, &gptp->ts[5]);
+					get_tx_ts(gptp, &gptp->ts[5]);
 					send_delay_resp_flwup(gptp);
 					break;
 				case GPTP_EVT_DM_PDELAY_REQ_TO:
 					memset(&gptp->ts[0], 0, sizeof(struct timespec64) * 4);
 					send_delay_req(gptp);
-					// get_tx_ts(gptp, &gptp->ts[0]);
+					get_tx_ts(gptp, &gptp->ts[0]);
 					break;
 				case GPTP_EVT_DM_PDELAY_RESP:
 					gptp_stop_timer(gptp, GPTP_TIMER_DELAYREQ_TO);
@@ -101,7 +101,7 @@ void dm_handle_event(struct gptp_instance* gptp, int evt_id)
 				case GPTP_EVT_DM_PDELAY_REQ:
 					get_rx_ts(gptp, &gptp->ts[4]);
 					send_delay_resp(gptp);
-					// get_tx_ts(gptp, &gptp->ts[5]);
+					get_tx_ts(gptp, &gptp->ts[5]);
 					send_delay_resp_flwup(gptp);
 					break;
 				case GPTP_EVT_DM_PDELAY_RESP_FLWUP:
@@ -166,7 +166,7 @@ static void send_delay_req(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 	
-	if ((err = gptp_send_msg(gptp, tx_len)) <= 0)
+	if ((err = gptp_send_msg(gptp->sd, tx_len)) <= 0)
 		printk(KERN_DEBUG "PDelayReq Send failed %d\n", err);
 	else
 		printk(KERN_INFO ">>> PDelayReq (%d) sent\n", gptp->dm.tx_seq_no++);
@@ -199,7 +199,7 @@ static void send_delay_resp(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	if ((err = gptp_send_msg(gptp, tx_len)) <= 0)
+	if ((err = gptp_send_msg(gptp->sd, tx_len)) <= 0)
 		printk(KERN_DEBUG "PDelayResp Send failed %d\n", err);	
 	else
 		printk(KERN_INFO "=== PDelayResp (%d) sent\n", gptp->dm.rx_seq_no);
@@ -232,7 +232,7 @@ static void send_delay_resp_flwup(struct gptp_instance* gptp)
 	/* Insert length */
 	gh->h.f.msg_len = gptp_chg_endianess_16(tx_len - sizeof(struct ethhdr));
 
-	if ((err = gptp_send_msg(gptp, tx_len) <= 0))
+	if ((err = gptp_send_msg(gptp->sd, tx_len) <= 0))
 		printk(KERN_DEBUG "PDelayRespFlwUp Send failed %d\n", err);	
 	else
 		printk(KERN_INFO "=== PDelayRespFlwUp (%d) sent\n", gptp->dm.rx_seq_no);
