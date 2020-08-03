@@ -12,6 +12,9 @@
 #include <net/tcp.h>
 #include <net/inet_connection_sock.h>
 #include <net/request_sock.h>
+#include <linux/ktime.h>
+
+#include "avb_hwclock.h"
 
 #define SND_AVB_DRIVER		"snd_avb"
 

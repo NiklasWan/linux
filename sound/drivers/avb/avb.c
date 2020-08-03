@@ -872,7 +872,7 @@ static int avb_probe(struct platform_device *devptr)
 			printk(KERN_ERR "avb_probe socket init failed");
 			err = -1;
 			goto __nodev;	
-		}
+		}		
 
 		return 0;
 	}
@@ -888,6 +888,7 @@ __nodev:
 static int avb_remove(struct platform_device *devptr)
 {
 	printk(KERN_NOTICE "avb_remove");
+	__avb_ptp_clock.ptp_clock.unregister_clock(&__avb_ptp_clock.ptp_clock);
 	snd_card_free(platform_get_drvdata(devptr));
 	return 0;
 }

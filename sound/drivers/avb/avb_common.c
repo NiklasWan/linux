@@ -42,7 +42,8 @@ bool avb_socket_init(struct socketdata* sd, int rx_timeout)
 	int err = 0;
 	struct net_device *dev = NULL;
 	struct net *net;
-	struct timeval ts_opts;      
+	struct timeval ts_opts;
+	ktime_t hw_time;     
 	ts_opts.tv_sec = (rx_timeout / 1000);
 	ts_opts.tv_usec = (rx_timeout % 1000);
 
@@ -66,6 +67,14 @@ bool avb_socket_init(struct socketdata* sd, int rx_timeout)
 	if ((err = kernel_setsockopt(sd->sock, SOL_SOCKET, SO_RCVTIMEO_OLD, (void *) &ts_opts, sizeof(ts_opts))) != 0) {
 		printk(KERN_WARNING "avb_msrp_init set rx timeout fails %d\n", err);
 		return false;
+	}
+
+	if ((err = __avb_ptp_clock.ptp_clock.register_clock(dev)) != 0) {
+		printk(KERN_ERR "Initialization of PTP HW clock failed\n");
+		return false;
+	} else {
+		hw_time = get_avb_ptp_time();
+		printk(KERN_DEBUG "Initialization of PTP HW clock time: %lld nanoseconds\n", hw_time);
 	}
 
 	/* Index of the network device */

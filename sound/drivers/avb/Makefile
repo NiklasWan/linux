@@ -4,6 +4,6 @@
 # Copyright (c) 2001 by Jaroslav Kysela <perex@perex.cz>
 #
 
-snd-avb-objs := msrp.o avdecc.o avtp.o avb_common.o avb.o
+snd-avb-objs := msrp.o avdecc.o avtp.o avb_common.o avb_hwclock.o ti_hwclock.o avb.o
 
 obj-$(CONFIG_SND_AVB) += snd-avb.o
